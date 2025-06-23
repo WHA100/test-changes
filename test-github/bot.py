@@ -8,29 +8,26 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-GAME = range(1)
+# Состояния для ConversationHandler
+ASK_NAME = 1
 
-# Обработчик команды /start
-def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return update.message.reply_text('Привет! Я тестовый бот.')
+# Словарь для хранения зарегистрированных пользователей (user_id: name)
+registered_users = {}
 
-# Обработчик команды /help
-def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return update.message.reply_text(
-        '/start — начать
-/help — список команд
-/about — о боте
-/game — мини-игра "Угадай число"
-/cancel — выйти из игры'
-    )
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Привет! Для регистрации введите, пожалуйста, ваше имя:')
+    return ASK_NAME
 
-# Обработчик команды /about
-def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return update.message.reply_text('Я бот для тестирования. Теперь у меня есть мини-игра!')
+async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    name = update.message.text.strip()
+    registered_users[user_id] = name
+    await update.message.reply_text(f'Спасибо, {name}! Вы успешно зарегистрированы.')
+    return ConversationHandler.END
 
-# Обработчик текстовых сообщений
-def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return update.message.reply_text(f'Вы написали: {update.message.text}')
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Регистрация отменена.')
+    return ConversationHandler.END
 
 # --- Мини-игра ---
 async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -38,22 +35,22 @@ async def game_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['number'] = number
     context.user_data['attempts'] = 0
     await update.message.reply_text('Я загадал число от 1 до 100. Попробуй угадать! Напиши число или /cancel для выхода.')
-    return GAME
+    return ASK_NAME
 
 async def game_guess(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         guess = int(update.message.text)
     except ValueError:
         await update.message.reply_text('Пожалуйста, введи целое число!')
-        return GAME
+        return ASK_NAME
     number = context.user_data['number']
     context.user_data['attempts'] += 1
     if guess < number:
         await update.message.reply_text('Мое число больше!')
-        return GAME
+        return ASK_NAME
     elif guess > number:
         await update.message.reply_text('Мое число меньше!')
-        return GAME
+        return ASK_NAME
     else:
         attempts = context.user_data['attempts']
         await update.message.reply_text(f'Поздравляю! Ты угадал число {number} за {attempts} попыток!')
@@ -67,20 +64,15 @@ async def main():
     # Замените 'YOUR_TOKEN' на токен вашего бота
     app = ApplicationBuilder().token('YOUR_TOKEN').build()
 
-    app.add_handler(CommandHandler('start', start))
-    app.add_handler(CommandHandler('help', help_command))
-    app.add_handler(CommandHandler('about', about))
-
-    game_handler = ConversationHandler(
-        entry_points=[CommandHandler('game', game_start)],
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
         states={
-            GAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_guess)]
+            ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)]
         },
-        fallbacks=[CommandHandler('cancel', game_cancel)]
+        fallbacks=[CommandHandler('cancel', cancel)]
     )
-    app.add_handler(game_handler)
-    app.add_handler(CommandHandler('cancel', game_cancel))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+
+    app.add_handler(conv_handler)
 
     print('Бот запущен...')
     await app.run_polling()
